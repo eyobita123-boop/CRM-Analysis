@@ -3,7 +3,8 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
-import io
+import glob
+import re
 
 # Set page config
 st.set_page_config(page_title="Deposit by RM Dashboard", layout="wide")
@@ -15,87 +16,94 @@ def load_data(file_path):
     Load and parse the Excel file.
     Returns: dict with dataframes: processing_summary, crm_summary, detailed, date
     """
-    xls = pd.ExcelFile(file_path)
-    
-    # Extract date from cell L2 (row 0, col 11) - "REPORT DATE" is at L1, value at L2
-    date_str = pd.read_excel(file_path, header=None, nrows=2, usecols="L").iloc[1, 0]
-    # Parse date (e.g., "2026-08-05 06:19:37")
-    report_date = pd.to_datetime(date_str.split()[0]).date()
-    
-    # Sheet1: Summary
-    df_sheet1 = pd.read_excel(file_path, sheet_name=0, header=None)
-    
-    # Find the row where "Processing Center Summary" appears
-    proc_start = df_sheet1[df_sheet1[0].astype(str).str.contains("Processing Center Summary", na=False)].index[0]
-    # The header row is proc_start + 1
-    proc_header = proc_start + 1
-    # The data rows until an empty row or next section
-    proc_end = df_sheet1[proc_header+1:][df_sheet1[proc_header+1:][0].isnull().all(axis=1)].index[0]
-    proc_df = df_sheet1.iloc[proc_header:proc_end].copy()
-    proc_df.columns = proc_df.iloc[0]
-    proc_df = proc_df[1:].reset_index(drop=True)
-    proc_df = proc_df[['PROCESSING_CENTER', 'Baseline', 'Deposit Positional', 'Incremental', 'Achievment Percentage']]
-    proc_df = proc_df[proc_df['PROCESSING_CENTER'].notna()]
-    
-    # Find "CRM Summary"
-    crm_start = df_sheet1[df_sheet1[0].astype(str).str.contains("CRM Summary", na=False)].index[0]
-    crm_header = crm_start + 1
-    crm_end = df_sheet1[crm_header+1:][df_sheet1[crm_header+1:][0].isnull().all(axis=1)].index[0]
-    crm_df = df_sheet1.iloc[crm_header:crm_end].copy()
-    crm_df.columns = crm_df.iloc[0]
-    crm_df = crm_df[1:].reset_index(drop=True)
-    crm_df = crm_df[['RM_NAME', 'Baseline', 'Deposit Positional', 'Incremental', 'Achievment Percentage']]
-    crm_df = crm_df[crm_df['RM_NAME'].notna()]
-    
-    # Find "Proc. Center & CRM Summary" - detailed breakdown
-    detail_start = df_sheet1[df_sheet1[0].astype(str).str.contains("Proc. Center & CRM Summary", na=False)].index[0]
-    detail_header = detail_start + 1
-    detail_end = df_sheet1[detail_header+1:][df_sheet1[detail_header+1:][0].isnull().all(axis=1)].index[0]
-    detail_df = df_sheet1.iloc[detail_header:detail_end].copy()
-    detail_df.columns = detail_df.iloc[0]
-    detail_df = detail_df[1:].reset_index(drop=True)
-    detail_df = detail_df[['PROCESSING_CENTER', 'RM_NAME', 'Baseline', 'Deposit Positional', 'Incremental']]
-    detail_df = detail_df[detail_df['PROCESSING_CENTER'].notna()]
-    
-    # Sheet2: Detailed transactions
-    df_sheet2 = pd.read_excel(file_path, sheet_name=1, header=4)  # header is at row 4 (0-indexed)
-    # Clean column names
-    df_sheet2.columns = df_sheet2.iloc[0]
-    df_sheet2 = df_sheet2[1:].reset_index(drop=True)
-    # Keep only rows with RM_NAME
-    df_sheet2 = df_sheet2[df_sheet2['RM_NAME'].notna()]
-    
-    # Convert numeric columns
-    for col in ['Baseline', 'Deposit Positional', 'INCRIENTAL MOBILIZED', 'INCRIMENTAL PERCENTAGE']:
-        if col in df_sheet2.columns:
-            df_sheet2[col] = pd.to_numeric(df_sheet2[col], errors='coerce')
-    
-    return {
-        'date': report_date,
-        'processing': proc_df,
-        'crm': crm_df,
-        'detail': detail_df,
-        'transactions': df_sheet2
-    }
+    try:
+        # Extract date from filename (e.g., 2026-08-05.xlsx)
+        filename = file_path.split('/')[-1]
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
+        report_date = datetime.strptime(date_match.group(1), '%Y-%m-%d').date() if date_match else None
+        
+        # Read Sheet1 (summary)
+        df_sheet1 = pd.read_excel(file_path, sheet_name=0, header=None)
+        
+        # Find "Processing Center Summary"
+        proc_start = df_sheet1[df_sheet1[0].astype(str).str.contains("Processing Center Summary", na=False)].index[0]
+        proc_header = proc_start + 1
+        proc_end = df_sheet1[proc_header+1:][df_sheet1[proc_header+1:][0].isnull().all(axis=1)].index[0]
+        proc_df = df_sheet1.iloc[proc_header:proc_end].copy()
+        proc_df.columns = proc_df.iloc[0]
+        proc_df = proc_df[1:].reset_index(drop=True)
+        proc_df = proc_df[['PROCESSING_CENTER', 'Baseline', 'Deposit Positional', 'Incremental', 'Achievment Percentage']]
+        proc_df = proc_df[proc_df['PROCESSING_CENTER'].notna()]
+        
+        # Find "CRM Summary"
+        crm_start = df_sheet1[df_sheet1[0].astype(str).str.contains("CRM Summary", na=False)].index[0]
+        crm_header = crm_start + 1
+        crm_end = df_sheet1[crm_header+1:][df_sheet1[crm_header+1:][0].isnull().all(axis=1)].index[0]
+        crm_df = df_sheet1.iloc[crm_header:crm_end].copy()
+        crm_df.columns = crm_df.iloc[0]
+        crm_df = crm_df[1:].reset_index(drop=True)
+        crm_df = crm_df[['RM_NAME', 'Baseline', 'Deposit Positional', 'Incremental', 'Achievment Percentage']]
+        crm_df = crm_df[crm_df['RM_NAME'].notna()]
+        
+        # Find "Proc. Center & CRM Summary" - detailed breakdown
+        detail_start = df_sheet1[df_sheet1[0].astype(str).str.contains("Proc. Center & CRM Summary", na=False)].index[0]
+        detail_header = detail_start + 1
+        detail_end = df_sheet1[detail_header+1:][df_sheet1[detail_header+1:][0].isnull().all(axis=1)].index[0]
+        detail_df = df_sheet1.iloc[detail_header:detail_end].copy()
+        detail_df.columns = detail_df.iloc[0]
+        detail_df = detail_df[1:].reset_index(drop=True)
+        detail_df = detail_df[['PROCESSING_CENTER', 'RM_NAME', 'Baseline', 'Deposit Positional', 'Incremental']]
+        detail_df = detail_df[detail_df['PROCESSING_CENTER'].notna()]
+        
+        # Sheet2: Detailed transactions
+        df_sheet2 = pd.read_excel(file_path, sheet_name=1, header=4)
+        df_sheet2.columns = df_sheet2.iloc[0]
+        df_sheet2 = df_sheet2[1:].reset_index(drop=True)
+        df_sheet2 = df_sheet2[df_sheet2['RM_NAME'].notna()]
+        
+        # Convert numeric columns
+        for col in ['Baseline', 'Deposit Positional', 'INCRIENTAL MOBILIZED', 'INCRIMENTAL PERCENTAGE']:
+            if col in df_sheet2.columns:
+                df_sheet2[col] = pd.to_numeric(df_sheet2[col], errors='coerce')
+        
+        return {
+            'date': report_date,
+            'processing': proc_df,
+            'crm': crm_df,
+            'detail': detail_df,
+            'transactions': df_sheet2
+        }
+    except Exception as e:
+        st.warning(f"Could not load file {file_path}: {e}")
+        return None
 
-# Load all three files
-file_dates = ['2026-08-05', '2026-08-06', '2026-08-07']
+# Load all Excel files in the current directory matching pattern "2026-08-*.xlsx"
+file_pattern = "2026-08-*.xlsx"
+file_list = glob.glob(file_pattern)
+if not file_list:
+    st.error("No Excel files found matching pattern. Please ensure files are in the current directory.")
+    st.stop()
+
 data_dict = {}
-for fdate in file_dates:
-    path = f"{fdate}.xlsx"
-    data_dict[fdate] = load_data(path)
+for file_path in file_list:
+    data = load_data(file_path)
+    if data and data['date']:
+        data_dict[data['date']] = data
+
+if not data_dict:
+    st.error("No valid data loaded. Please check file format.")
+    st.stop()
 
 # Combine data across dates into a single dataframe for time series
-all_dates = []
 all_processing = []
 all_crm = []
-for fdate, data in data_dict.items():
+for date, data in data_dict.items():
     proc = data['processing'].copy()
-    proc['Date'] = data['date']
+    proc['Date'] = date
     all_processing.append(proc)
     
     crm = data['crm'].copy()
-    crm['Date'] = data['date']
+    crm['Date'] = date
     all_crm.append(crm)
 
 df_proc_all = pd.concat(all_processing, ignore_index=True)
@@ -146,10 +154,8 @@ if len(selected_dates) >= 2:
     first_dep = df_crm_all[df_crm_all['Date']==first_date]['Deposit Positional'].sum()
     last_dep = df_crm_all[df_crm_all['Date']==last_date]['Deposit Positional'].sum()
     daily_change = last_dep - first_dep
-    daily_change_pct = (daily_change / first_dep) * 100 if first_dep else 0
 else:
     daily_change = 0
-    daily_change_pct = 0
 
 col1.metric("Total Deposits", f"{total_deposits:,.2f}", delta=f"{daily_change:+,.2f}")
 col2.metric("Baseline", f"{total_baseline:,.2f}")
@@ -158,7 +164,6 @@ col4.metric("Avg Achievement %", f"{avg_achievement:.2%}" if pd.notna(avg_achiev
 
 # ---------- Time Series ----------
 st.subheader("📈 Deposit Trend Over Time")
-# Aggregate by date
 ts_data = filtered_crm.groupby('Date')['Deposit Positional'].sum().reset_index()
 fig_ts = px.line(ts_data, x='Date', y='Deposit Positional', 
                  title='Total Deposits by Date', markers=True)
@@ -167,7 +172,6 @@ st.plotly_chart(fig_ts, use_container_width=True)
 
 # ---------- Processing Center Breakdown ----------
 st.subheader("🏢 Processing Center Performance")
-# Group by processing center and date (or aggregate across dates)
 center_data = filtered_proc.groupby('PROCESSING_CENTER').agg({
     'Baseline': 'sum',
     'Deposit Positional': 'sum',
@@ -191,7 +195,6 @@ fig_center.update_layout(barmode='group', yaxis_tickformat=',.0f',
                          title='Deposits by Processing Center')
 st.plotly_chart(fig_center, use_container_width=True)
 
-# Incremental by center
 fig_inc = px.bar(center_data, x='PROCESSING_CENTER', y='Incremental',
                  title='Incremental by Processing Center',
                  color='Incremental', color_continuous_scale='RdBu')
@@ -200,11 +203,8 @@ st.plotly_chart(fig_inc, use_container_width=True)
 
 # ---------- RM Performance Table ----------
 st.subheader("👤 Relationship Manager Performance")
-# Show all RMs with their metrics, sortable
 rm_display = filtered_crm[['Date', 'RM_NAME', 'Baseline', 'Deposit Positional', 'Incremental', 'Achievment Percentage']]
-# Add a column for Achievement % as percentage
 rm_display['Achievement %'] = rm_display['Achievment Percentage'].apply(lambda x: f"{x:.2%}" if pd.notna(x) else "N/A")
-# Sort by incremental descending
 rm_display = rm_display.sort_values('Incremental', ascending=False)
 
 st.dataframe(
@@ -221,41 +221,39 @@ st.dataframe(
     hide_index=True
 )
 
-# ---------- Scatter Plot: Incremental vs Achievement ----------
+# ---------- Scatter Plot ----------
 st.subheader("📊 Incremental vs Achievement %")
 scatter_data = filtered_crm.dropna(subset=['Incremental', 'Achievment Percentage'])
-fig_scatter = px.scatter(
-    scatter_data, x='Incremental', y='Achievment Percentage',
-    hover_data=['RM_NAME', 'Date'],
-    color='Date',
-    title='Incremental vs Achievement Percentage (by RM)',
-    labels={'Incremental': 'Incremental (ETB)', 'Achievment Percentage': 'Achievement %'}
-)
-fig_scatter.update_layout(yaxis_tickformat='.0%')
-st.plotly_chart(fig_scatter, use_container_width=True)
+if not scatter_data.empty:
+    fig_scatter = px.scatter(
+        scatter_data, x='Incremental', y='Achievment Percentage',
+        hover_data=['RM_NAME', 'Date'],
+        color='Date',
+        title='Incremental vs Achievement Percentage (by RM)',
+        labels={'Incremental': 'Incremental (ETB)', 'Achievment Percentage': 'Achievement %'}
+    )
+    fig_scatter.update_layout(yaxis_tickformat='.0%')
+    st.plotly_chart(fig_scatter, use_container_width=True)
+else:
+    st.info("No data available for scatter plot.")
 
-# ---------- Drill-down: Detailed Transactions for a Selected RM ----------
+# ---------- Drill-down ----------
 st.subheader("🔍 Drill-down: RM Detailed Transactions")
-# Get unique RM names from the latest date or overall
 rm_list = sorted(df_crm_all['RM_NAME'].unique())
 selected_rm = st.selectbox("Select RM to view detailed transactions", rm_list)
 
 if selected_rm:
-    # Get transactions for that RM from the latest available file (or all dates)
-    # We'll combine transactions from all dates for that RM
     trans_list = []
-    for fdate, data in data_dict.items():
+    for date, data in data_dict.items():
         trans = data['transactions']
         trans_rm = trans[trans['RM_NAME'] == selected_rm].copy()
-        trans_rm['Date'] = data['date']
+        trans_rm['Date'] = date
         trans_list.append(trans_rm)
     
     if trans_list:
         trans_combined = pd.concat(trans_list, ignore_index=True)
-        # Show summary stats for this RM
         st.write(f"**{selected_rm}** - Total Deposits: {trans_combined['Deposit Positional'].sum():,.2f}, Incremental: {trans_combined['INCRIENTAL MOBILIZED'].sum():+,.2f}")
         
-        # Show transactions table
         st.dataframe(
             trans_combined[['Date', 'PROCESSING_CENTER', 'BRANCH_NAME', 'AC_DESC', 'Baseline', 'Deposit Positional', 'INCRIENTAL MOBILIZED']],
             column_config={
@@ -273,11 +271,10 @@ if selected_rm:
     else:
         st.warning("No detailed transactions found for this RM.")
 
-# ---------- Export Filtered Data ----------
+# ---------- Export ----------
 st.sidebar.markdown("---")
 st.sidebar.subheader("Export Data")
 if st.sidebar.button("Download Filtered Data (CSV)"):
-    # Create a CSV of the filtered CRM summary
     csv = filtered_crm.to_csv(index=False).encode('utf-8')
     st.sidebar.download_button(
         label="Download CSV",
@@ -286,6 +283,5 @@ if st.sidebar.button("Download Filtered Data (CSV)"):
         mime="text/csv"
     )
 
-# Footer
 st.markdown("---")
 st.caption("Dashboard built with Streamlit and Plotly. Data updated daily.")
