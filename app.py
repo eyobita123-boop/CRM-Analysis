@@ -55,16 +55,34 @@ def load_data(file_path):
         detail_df = detail_df[['PROCESSING_CENTER', 'RM_NAME', 'Baseline', 'Deposit Positional', 'Incremental']]
         detail_df = detail_df[detail_df['PROCESSING_CENTER'].notna()]
         
-        # Sheet2: Detailed transactions
-        df_sheet2 = pd.read_excel(file_path, sheet_name=1, header=4)
-        df_sheet2.columns = df_sheet2.iloc[0]
-        df_sheet2 = df_sheet2[1:].reset_index(drop=True)
-        df_sheet2 = df_sheet2[df_sheet2['RM_NAME'].notna()]
+        # ---- Sheet2: Detailed transactions ----
+        # Try to read Sheet2; if not present, return empty transactions
+        try:
+            # Read without header, we'll find the header row dynamically
+            df_raw = pd.read_excel(file_path, sheet_name="Sheet2", header=None)
+            # Find the row where 'RM_NAME' appears
+            header_row = None
+            for i, row in df_raw.iterrows():
+                if row.astype(str).str.contains('RM_NAME').any():
+                    header_row = i
+                    break
+            if header_row is None:
+                # Fallback: assume header is at row 4 (0-indexed)
+                header_row = 4
+            # Set the header
+            df_sheet2 = pd.read_excel(file_path, sheet_name="Sheet2", header=header_row)
+        except Exception as e:
+            # If Sheet2 doesn't exist, return empty DataFrame
+            st.warning(f"Sheet2 not found in {file_path}: {e}")
+            df_sheet2 = pd.DataFrame()
         
-        # Convert numeric columns
-        for col in ['Baseline', 'Deposit Positional', 'INCRIENTAL MOBILIZED', 'INCRIMENTAL PERCENTAGE']:
-            if col in df_sheet2.columns:
-                df_sheet2[col] = pd.to_numeric(df_sheet2[col], errors='coerce')
+        if not df_sheet2.empty:
+            # Keep only rows with RM_NAME
+            df_sheet2 = df_sheet2[df_sheet2['RM_NAME'].notna()]
+            # Convert numeric columns
+            for col in ['Baseline', 'Deposit Positional', 'INCRIENTAL MOBILIZED', 'INCRIMENTAL PERCENTAGE']:
+                if col in df_sheet2.columns:
+                    df_sheet2[col] = pd.to_numeric(df_sheet2[col], errors='coerce')
         
         return {
             'date': report_date,
@@ -246,9 +264,11 @@ if selected_rm:
     trans_list = []
     for date, data in data_dict.items():
         trans = data['transactions']
-        trans_rm = trans[trans['RM_NAME'] == selected_rm].copy()
-        trans_rm['Date'] = date
-        trans_list.append(trans_rm)
+        if not trans.empty:
+            trans_rm = trans[trans['RM_NAME'] == selected_rm].copy()
+            if not trans_rm.empty:
+                trans_rm['Date'] = date
+                trans_list.append(trans_rm)
     
     if trans_list:
         trans_combined = pd.concat(trans_list, ignore_index=True)
