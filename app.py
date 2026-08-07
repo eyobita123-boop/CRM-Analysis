@@ -56,33 +56,19 @@ def load_data(file_path):
         detail_df = detail_df[detail_df['PROCESSING_CENTER'].notna()]
         
         # ---- Sheet2: Detailed transactions ----
-        # Try to read Sheet2; if not present, return empty transactions
+        # Hard-code header row (row 4, 0-indexed) as per the file structure
         try:
-            # Read without header, we'll find the header row dynamically
-            df_raw = pd.read_excel(file_path, sheet_name="Sheet2", header=None)
-            # Find the row where 'RM_NAME' appears
-            header_row = None
-            for i, row in df_raw.iterrows():
-                if row.astype(str).str.contains('RM_NAME').any():
-                    header_row = i
-                    break
-            if header_row is None:
-                # Fallback: assume header is at row 4 (0-indexed)
-                header_row = 4
-            # Set the header
-            df_sheet2 = pd.read_excel(file_path, sheet_name="Sheet2", header=header_row)
-        except Exception as e:
-            # If Sheet2 doesn't exist, return empty DataFrame
-            st.warning(f"Sheet2 not found in {file_path}: {e}")
-            df_sheet2 = pd.DataFrame()
-        
-        if not df_sheet2.empty:
-            # Keep only rows with RM_NAME
+            df_sheet2 = pd.read_excel(file_path, sheet_name="Sheet2", header=4)
+            # Clean: drop rows where RM_NAME is missing
             df_sheet2 = df_sheet2[df_sheet2['RM_NAME'].notna()]
             # Convert numeric columns
             for col in ['Baseline', 'Deposit Positional', 'INCRIENTAL MOBILIZED', 'INCRIMENTAL PERCENTAGE']:
                 if col in df_sheet2.columns:
                     df_sheet2[col] = pd.to_numeric(df_sheet2[col], errors='coerce')
+        except Exception as e:
+            # If Sheet2 doesn't exist, return empty DataFrame
+            st.warning(f"Sheet2 not found or malformed in {file_path}: {e}")
+            df_sheet2 = pd.DataFrame()
         
         return {
             'date': report_date,
